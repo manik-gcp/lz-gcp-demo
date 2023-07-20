@@ -1,0 +1,49 @@
+name: Deploy GCP Projects
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Set up GCP Projects
+    runs-on: ubuntu-latest
+    env:
+      GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install tfenv & correct terraform version
+        run: |
+          git clone https://github.com/tfutils/tfenv.git ~/.tfenv
+          echo "$HOME/.tfenv/bin" >> $GITHUB_PATH
+
+      - name: Validate terraform code
+        run: |
+          echo "Installing terraform version"
+          tfenv install
+          tfenv use        
+
+      - name: Clone modules
+        uses: actions/checkout@v2
+        with:
+          repository: tw-gcp-landing-zone/google-project-factory
+          token: ${{ secrets.GH_ACTIONS_PAT }}
+          ref: main
+          path: tf_modules
+
+      - name: Terraform Stage
+        run: |
+          cd tf_modules
+          tfvars_dir=../
+          for tfvars_file in "${tfvars_dir}"/*.tfvars; do
+          echo "Using tfvars file: ${tfvars_file}"
+          workspace_dir="${tfvars_file%.*}"
+          echo ${workspace_dir:4}
+          terraform init
+          terraform workspace select "${workspace_dir:4}" || terraform workspace new "${workspace_dir:4}"
+          terraform plan -var-file="${tfvars_file}"
+          terraform apply -auto-approve -var-file="${tfvars_file}"
+          done
